@@ -30,4 +30,15 @@ public class MainActivity extends Activity {
 		String input = new File(Environment.getExternalStorageDirectory(),"input.mp4").getAbsolutePath();
 		FFmpegUtils.paly(input, surfaceView.getHolder().getSurface());
 	}
+	
+	public void decodeAudio(View view) {
+		String input = new File(Environment.getExternalStorageDirectory(),"input.mp4").getAbsolutePath();
+		String output = new File(Environment.getExternalStorageDirectory(),"output_pcm.pcm").getAbsolutePath();
+		FFmpegUtils.decodeAudio(input, output);
+	}
+	
+	public void decodePlayAudio(View view) {
+		String input = new File(Environment.getExternalStorageDirectory(),"input.mp4").getAbsolutePath();
+		FFmpegUtils.playAudio(input);
+	}
 }

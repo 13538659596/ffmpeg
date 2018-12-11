@@ -23,6 +23,24 @@ JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_decode
 JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_paly
   (JNIEnv *, jclass, jstring, jobject);
 
+
+/*
+ * Class:     com_example_ffmpeg_FFmpegUtils
+ * Method:    decodeAudio
+ * Signature: (Ljava/lang/String;Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_decodeAudio
+  (JNIEnv *, jclass, jstring, jstring);
+
+
+/*
+ * Class:     com_example_ffmpeg_FFmpegUtils
+ * Method:    playAudio
+ * Signature: (Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_playAudio
+  (JNIEnv *, jclass, jstring);
+
 #ifdef __cplusplus
 }
 #endif

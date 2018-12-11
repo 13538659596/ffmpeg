@@ -6,8 +6,9 @@
 #include <android/native_window_jni.h>
 #include <android/native_window.h>
 #include <unistd.h>
+#include <string.h>
 
-
+#define MAX_AUDIO_FRME_SIZE (48000 * 4)
 
 
 
@@ -31,6 +32,9 @@ extern "C" {
 
 	#include "ffmpeg/include/libswscale/swscale.h"
 	#include "libyuv/include/libyuv.h"
+	#include "libavutil/opt.h"
+	#include "libswresample/swresample.h"
+	#include "libavutil/channel_layout.h"
 };
 
 /*
@@ -43,7 +47,7 @@ JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_decode
 
 	const char *inputFile = env->GetStringUTFChars(input_jstr, NULL);
 	const char *outputFile = env->GetStringUTFChars(output_jstr, NULL);
-
+	LOGE("outputFile: %s", outputFile);
 	FILE *fp_yuv = fopen(outputFile, "wb+");
 	if(fp_yuv == NULL) {
 		LOGE("打开文件失败");
@@ -547,6 +551,235 @@ JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_paly
 
 	env->ReleaseStringUTFChars(path_jstr, file_path);
 }
+
+
+/**
+ * 音频重采样
+ */
+JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_decodeAudio
+  (JNIEnv *env, jclass jcls, jstring input_jstr, jstring output_jstr) {
+
+	const char *input_cstr = env->GetStringUTFChars(input_jstr, NULL);
+	const char *output_cstr = env->GetStringUTFChars(output_jstr, NULL);
+
+	FILE *out_fp = fopen(output_cstr,"wb+");
+
+	av_register_all();
+	AVFormatContext *pFormatCtx = avformat_alloc_context();
+	if (avformat_open_input(&pFormatCtx, input_cstr, NULL, NULL) != 0) {
+		LOGE("打开音频文件失败  %s\n", strerror(errno));
+		return;
+	}
+	if(avformat_find_stream_info(pFormatCtx, NULL) < 0) {
+		LOGE("找不到音频信息");
+		return;
+	}
+	int stream_audio_index = -1;
+	for(int i = 0; i < pFormatCtx->nb_streams; i++) {
+		if(pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+			stream_audio_index = i;
+			break;
+		}
+	}
+	if(stream_audio_index == -1) {
+		LOGE("文件找不到音频信息");
+		return;
+	}
+
+	 AVCodecContext *pCodecCtx = pFormatCtx->streams[stream_audio_index]->codec;
+	 AVCodec *codec = avcodec_find_decoder(pCodecCtx->codec_id);
+
+	if(codec == NULL){
+		LOGE("%s","无法获取解码器");
+		return;
+	}
+	//打开解码器
+	if(avcodec_open2(pCodecCtx,codec,NULL) < 0){
+		LOGE("%s","无法打开解码器");
+		return;
+	}
+
+	int got_frame_ptr = 0;
+	//压缩数据
+	AVPacket *packet = (AVPacket *)av_malloc(sizeof(AVPacket));
+	//解压缩数据
+	AVFrame *frame = av_frame_alloc();
+	//---------------------------------设置重采样参数-----------------------------------------
+	 SwrContext *swrCtx = swr_alloc();
+
+	 int src_ch_layout = pCodecCtx->channel_layout;
+	 int src_sample_rate = pCodecCtx->sample_rate;
+	 enum AVSampleFormat src_sample_fmt = pCodecCtx->sample_fmt;
+
+	int dst_ch_layout = AV_CH_LAYOUT_STEREO;
+	int dst_sample_rate = 48000;
+	enum AVSampleFormat dst_sample_fmt = AV_SAMPLE_FMT_S16;
+
+	//两种设置采样参数的方法
+
+	/*av_opt_set_int(swrCtx, "in_channel_layout", src_ch_layout, 0);
+	av_opt_set_int(swrCtx, "in_sample_rate", src_sample_rate, 0);
+	av_opt_set_int(swrCtx, "in_sample_fmt", src_sample_fmt, 0);
+
+	av_opt_set_int(swrCtx, "out_channel_layout", dst_ch_layout, 0);
+	av_opt_set_int(swrCtx, "out_sample_rate", dst_sample_rate, 0);
+	av_opt_set_int(swrCtx, "out_sample_fmt", dst_sample_fmt, 0);*/
+
+	swr_alloc_set_opts(swrCtx,
+	                  dst_ch_layout, dst_sample_fmt, dst_sample_rate,
+	                  src_ch_layout, src_sample_fmt, src_sample_rate,
+	                                      0, NULL);
+
+	if(swr_init(swrCtx) < 0) {
+		LOGE("%s", "Failed to initialize the resampling context\n");
+		return;
+	}
+	//--------------------------------------------------------------------------
+
+	uint8_t *out_buffer = (uint8_t *)av_malloc(MAX_AUDIO_FRME_SIZE);
+	//输出的声道个数
+	int dst_channel_nb = av_get_channel_layout_nb_channels(dst_ch_layout);
+
+	int count = 0;
+	 while(av_read_frame(pFormatCtx,packet) >=0) {
+			 //只要视频压缩数据（根据流的索引位置判断）
+			 if(packet->stream_index == stream_audio_index) {
+				 int ret = avcodec_decode_audio4(pCodecCtx, frame,&got_frame_ptr, packet);
+
+				 if(ret >= 0) {
+					 if(got_frame_ptr > 0) {
+
+						 LOGE("解码音频: %d", count++);
+						  swr_convert(swrCtx, &out_buffer, MAX_AUDIO_FRME_SIZE,
+						                                 (const uint8_t **)frame->data , frame->nb_samples);
+						  //计算输出音频占用内存
+						  int out_size = av_samples_get_buffer_size(NULL, dst_channel_nb,
+								  	  frame->nb_samples, dst_sample_fmt, 1);
+						  fwrite(out_buffer, 1, out_size, out_fp);
+
+					 }
+				 }
+
+			 }
+
+			 av_free_packet(packet);
+	}
+	LOGE("解码完成");
+	fclose(out_fp);
+	av_frame_free(&frame);
+	av_free(out_buffer);
+
+	swr_free(&swrCtx);
+	avcodec_close(pCodecCtx);
+	avformat_close_input(&pFormatCtx);
+
+	env->ReleaseStringUTFChars(input_jstr, input_cstr);
+	env->ReleaseStringUTFChars(output_jstr, output_cstr);
+}
+
+
+JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_playAudio
+  (JNIEnv *env, jclass jcls, jstring input_file_jstr) {
+
+	//------------------------------jni获取AudioTrack对象
+	jmethodID method_creat_audiotrack = env->GetStaticMethodID(jcls, "getAudioTrack", "()Landroid/media/AudioTrack;");
+	jobject audiotrack =   env->CallStaticObjectMethod( jcls, method_creat_audiotrack);
+	jclass audiotrack_cls = env->GetObjectClass(audiotrack);
+	jmethodID play = env->GetMethodID(audiotrack_cls, "play", "()V");
+	env->CallVoidMethod(audiotrack, play);
+
+	jmethodID write = env->GetMethodID(audiotrack_cls, "write", "([BII)I");
+	//-----------------------------------------------
+	const char *input_file_cstr = env->GetStringUTFChars(input_file_jstr, NULL);
+	int ret = 0;
+	av_register_all();
+	AVFormatContext * pFrameCtx = avformat_alloc_context();
+	if(avformat_open_input(&pFrameCtx, input_file_cstr, NULL, NULL) != 0) {
+		LOGE("打开文件失败：%s\n", strerror(errno));
+		return;
+	}
+	if(avformat_find_stream_info(pFrameCtx, NULL) < 0) {
+		LOGE("文件中未找到流信息：%s\n", strerror(errno));
+		return;
+	}
+
+	int stream_audio_index = -1;
+
+	for(int i=0; i < pFrameCtx->nb_streams; i++) {
+		if(pFrameCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+			stream_audio_index = i;
+			break;
+		}
+	}
+
+	if(stream_audio_index == -1) {
+		LOGE("音频解码器未找到");
+		return;
+	}
+
+	 AVCodecContext *pCodecCtx = pFrameCtx->streams[stream_audio_index]->codec;
+	 AVCodec *avcodec = avcodec_find_decoder(pCodecCtx->codec_id);
+
+	 SwrContext *swr_ctx = swr_alloc();
+	 int out_ch_layout = AV_CH_LAYOUT_STEREO;
+	 enum AVSampleFormat out_sample_fmt = AV_SAMPLE_FMT_S16;
+	 int out_sample_rate = 48000;
+	 swr_alloc_set_opts(swr_ctx,
+	                      out_ch_layout, out_sample_fmt, out_sample_rate,
+	                      pCodecCtx->channel_layout, pCodecCtx->sample_fmt, pCodecCtx->sample_rate,
+	                      0, NULL);
+	 if(swr_init(swr_ctx) < 0){
+		 LOGE("初始化重采样参数异常: %s", strerror(errno));
+		 return;
+	 }
+
+
+	if(avcodec_open2(pCodecCtx, avcodec, NULL) != 0) {
+		LOGE("解码器打开异常：%s\n", strerror(errno));
+		return;
+	}
+
+
+	AVPacket *pkt = (AVPacket *)av_malloc(sizeof(AVPacket));
+	AVFrame *frame = av_frame_alloc();
+	uint8_t * out_buff = (uint8_t *)av_malloc(MAX_AUDIO_FRME_SIZE);
+	int out_nb_channels = av_get_channel_layout_nb_channels(out_ch_layout);
+	int got_frame_ptr = 0;
+
+	while(av_read_frame(pFrameCtx, pkt) >= 0) {
+		if(pkt->stream_index == stream_audio_index) {
+			ret = avcodec_decode_audio4(pCodecCtx, frame,
+			                          &got_frame_ptr, pkt);
+
+			swr_convert(swr_ctx, &out_buff, MAX_AUDIO_FRME_SIZE,
+			                                (const uint8_t **)frame->data , frame->nb_samples);
+			 int out_size = av_samples_get_buffer_size(NULL, out_nb_channels, frame->nb_samples,
+					 out_sample_fmt, 1);
+
+			//out_buffer缓冲区数据，转成byte数组
+			 jbyteArray byteArray = env->NewByteArray(out_size);
+			 //给数组赋值
+			 jbyte* elments = env->GetByteArrayElements(byteArray, NULL);
+			 memcpy(elments, out_buff, out_size);
+			 //同步数组
+			 env->ReleaseByteArrayElements(byteArray, elments, 0);
+
+
+			 env->CallVoidMethod(audiotrack, write, byteArray,0, out_size);
+			 //释放局部引用
+			 env->DeleteLocalRef(byteArray);
+		}
+	}
+	av_frame_free(&frame);
+	av_free(out_buff);
+
+	swr_free(&swr_ctx);
+	avcodec_close(pCodecCtx);
+	avformat_close_input(&pFrameCtx);
+	env->ReleaseStringUTFChars(input_file_jstr, input_file_cstr);
+}
+
+
 
 
 
