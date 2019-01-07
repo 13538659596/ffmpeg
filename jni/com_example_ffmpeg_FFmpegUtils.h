@@ -52,6 +52,15 @@ JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_playAudio
 JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_palyAudioAndVideo
   (JNIEnv *, jclass, jstring, jobject);
 
+
+/*
+ * Class:     com_example_ffmpeg_FFmpegUtils
+ * Method:    sysnAudioAndVedio
+ * Signature: (Ljava/lang/String;Landroid/view/Surface;)V
+ */
+JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_sysnAudioAndVedio
+  (JNIEnv *, jclass, jstring, jobject);
+
 #ifdef __cplusplus
 }
 #endif

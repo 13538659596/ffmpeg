@@ -27,6 +27,14 @@ public class FFmpegUtils {
 	
 	public native static void palyAudioAndVideo(String path, Surface surface);
 	
+	/**
+	 * 同步音视频
+	 * @param path
+	 * @param surface
+	 */
+	public native static void sysnAudioAndVedio(String path, Surface surface);
+		
+	
 	
 	public static AudioTrack getAudioTrack() {
 		

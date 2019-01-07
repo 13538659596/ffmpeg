@@ -114,7 +114,8 @@ obj/local/armeabi/objs/myffmpeg/ffmpeg.o: jni/ffmpeg.cpp \
  jni/ffmpeg/include/libswresample/swresample.h \
  jni/ffmpeg/include/libswresample/version.h \
  E:/NDK/android-ndk-r8e/platforms/android-9/arch-arm/usr/include/pthread.h \
- E:/NDK/android-ndk-r8e/platforms/android-9/arch-arm/usr/include/sched.h
+ E:/NDK/android-ndk-r8e/platforms/android-9/arch-arm/usr/include/sched.h \
+ jni/syn_audio_video.h
 
 jni/com_example_ffmpeg_FFmpegUtils.h:
 
@@ -365,3 +366,5 @@ jni/ffmpeg/include/libswresample/version.h:
 E:/NDK/android-ndk-r8e/platforms/android-9/arch-arm/usr/include/pthread.h:
 
 E:/NDK/android-ndk-r8e/platforms/android-9/arch-arm/usr/include/sched.h:
+
+jni/syn_audio_video.h:

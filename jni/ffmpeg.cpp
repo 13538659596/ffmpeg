@@ -1089,4 +1089,17 @@ JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_palyAudioAndVideo
 }
 
 
+#include "syn_audio_video.h"
+/*
+ * Class:     com_example_ffmpeg_FFmpegUtils
+ * Method:    sysnAudioAndVedio
+ * Signature: (Ljava/lang/String;Landroid/view/Surface;)V
+ */
+JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_sysnAudioAndVedio
+  (JNIEnv *env, jclass jcls, jstring input_file, jobject surface) {
+
+	syn_audeo_vedio(env, jcls, input_file, surface);
+}
+
+
 
