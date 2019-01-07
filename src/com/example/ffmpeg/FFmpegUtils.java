@@ -25,11 +25,13 @@ public class FFmpegUtils {
 	
 	public native static void playAudio(String input);
 	
+	public native static void palyAudioAndVideo(String path, Surface surface);
+	
 	
 	public static AudioTrack getAudioTrack() {
 		
 		int channel = AudioFormat.CHANNEL_OUT_STEREO;
-		int sample = 48000;
+		int sample = 44100;
 		int format =  AudioFormat.ENCODING_PCM_16BIT;
 	    int bufsize = AudioTrack.getMinBufferSize(sample,
 			   channel,

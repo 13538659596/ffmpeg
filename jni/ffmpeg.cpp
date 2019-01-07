@@ -464,6 +464,7 @@ JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_paly
 
 	if(avformat_open_input(&pFormatCtx, file_path, NULL, NULL) != 0) {
 		LOGE("打开视频文件失败");
+		LOGE("%s\n", strerror(errno));
 		return;
 	}
 
@@ -723,7 +724,7 @@ JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_playAudio
 	 SwrContext *swr_ctx = swr_alloc();
 	 int out_ch_layout = AV_CH_LAYOUT_STEREO;
 	 enum AVSampleFormat out_sample_fmt = AV_SAMPLE_FMT_S16;
-	 int out_sample_rate = 48000;
+	 int out_sample_rate = 44100;
 	 swr_alloc_set_opts(swr_ctx,
 	                      out_ch_layout, out_sample_fmt, out_sample_rate,
 	                      pCodecCtx->channel_layout, pCodecCtx->sample_fmt, pCodecCtx->sample_rate,
@@ -780,7 +781,312 @@ JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_playAudio
 }
 
 
+#include <pthread.h>
+struct Player{
+	AVFormatContext *avFormatCtx;
+	int stream_audio_index;
+	int stream_video_index;
 
+	AVCodecContext *audio_codec_ctx;
+	AVCodecContext *video_codec_ctx;
+
+	ANativeWindow* mWindow;
+
+	 SwrContext *swr_ctx;
+
+	pthread_t video_thread_id;
+	pthread_t audio_thread_id;
+
+	jmethodID audioTrack_write;
+	jobject audioTrack;
+
+
+};
+
+
+jclass global_jcls;
+JavaVM *javaVm = NULL;
+
+/**
+ * 初始化AVFormatContext
+ */
+void init_av_ctx(const char *input_file, struct Player *myPlayer) {
+	av_register_all();
+	AVFormatContext *avFormatCtx = avformat_alloc_context();
+	if(avformat_open_input(&avFormatCtx, input_file, NULL, NULL) != 0) {
+		LOGE("打开文件失败: %s\n", strerror(errno));
+		if(avFormatCtx != NULL) {
+				LOGE("释放资源");
+				avformat_close_input(&avFormatCtx);
+			}
+	}
+	if(avformat_find_stream_info(avFormatCtx, NULL) < 0) {
+		LOGE("未找到视频流信息: %s\n", strerror(errno));
+		if(avFormatCtx != NULL) {
+				LOGE("释放资源");
+				avformat_close_input(&avFormatCtx);
+			}
+	}
+	myPlayer->avFormatCtx = avFormatCtx;
+}
+
+/**
+ * 获取音视频在文件的索引位置
+ */
+void find_stream_index(struct Player *myPlayer) {
+	for(int i = 0; i < myPlayer->avFormatCtx->nb_streams; i++) {
+		if(myPlayer->avFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+			LOGE("音频流位置: %d", i);
+			myPlayer->stream_audio_index = i;
+		}else if(myPlayer->avFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+			LOGE("视频频流位置: %d", i);
+			myPlayer->stream_video_index = i;
+		}
+	}
+}
+
+/**
+ * 打开解码器
+ * return value
+ * -1 打开解码器失败
+ * 0  打开成功
+ */
+int open_video_decoder(struct Player *myPlayer) {
+	AVCodecContext *codec_ctx = myPlayer->avFormatCtx->streams[myPlayer->stream_video_index]->codec;
+	AVCodec *pCodec = avcodec_find_decoder(codec_ctx->codec_id);
+
+	if(avcodec_open2(codec_ctx, pCodec, NULL) != 0) {
+		LOGE("视频解码器打开错误: %s\n", strerror(errno));
+		return -1;
+	}
+	myPlayer->video_codec_ctx = codec_ctx;
+	return 0;
+}
+
+
+/**
+ * 打开解码器
+ * return value
+ * -1 打开解码器失败
+ * 0  打开成功
+ */
+int open_audio_decoder(struct Player *myPlayer) {
+	LOGE("%d\n", myPlayer->stream_audio_index);
+	AVCodecContext *codec_ctx = myPlayer->avFormatCtx->streams[myPlayer->stream_audio_index]->codec;
+	AVCodec *codec = avcodec_find_decoder(codec_ctx->codec_id);
+	if(codec == NULL) {
+		LOGE("获取解码器错误: %s\n", strerror(errno));
+		return -1;
+	}
+	if(avcodec_open2(codec_ctx, codec, NULL) != 0) {
+		LOGE("音频解码器打开错误: %s\n", strerror(errno));
+		return -1;
+	}
+	myPlayer->audio_codec_ctx = codec_ctx;
+	return 0;
+}
+
+
+void init_window(JNIEnv *env, jobject surface, struct Player *myPlayer) {
+	ANativeWindow* mWindow = ANativeWindow_fromSurface(env, surface);
+	myPlayer->mWindow = mWindow;
+}
+
+/**
+ * 解码视频
+ */
+void decode_v(struct Player *myPlayer, AVPacket *pkt) {
+	AVFrame *picture = av_frame_alloc();
+
+	int got_picture_ptr;
+
+	ANativeWindow_Buffer outBuffer;
+
+	//设置缓存的几何信息
+	 AVFrame *rgb_frame = av_frame_alloc();
+
+	//uint8_t *out_buffer = (uint8_t *)av_malloc(avpicture_get_size(AV_PIX_FMT_RGBA,pCodecCtx->width,pCodecCtx->height));
+
+	ANativeWindow* mWindow = myPlayer->mWindow;
+	//解包成一帧一帧图像
+	int ret = avcodec_decode_video2(myPlayer->video_codec_ctx, picture, &got_picture_ptr,pkt);
+
+	 if(ret >= 0) {
+		 ANativeWindow_setBuffersGeometry(mWindow, myPlayer->video_codec_ctx->width,myPlayer->video_codec_ctx->height,WINDOW_FORMAT_RGBA_8888);
+		 ANativeWindow_lock(mWindow, &outBuffer, NULL);
+
+		 avpicture_fill((AVPicture *)rgb_frame,(uint8_t *)outBuffer.bits, AV_PIX_FMT_RGBA, myPlayer->video_codec_ctx->width, myPlayer->video_codec_ctx->height);
+
+		 libyuv::I420ToARGB(picture->data[0], picture->linesize[0],
+					 picture->data[2], picture->linesize[2],
+					 picture->data[1], picture->linesize[1],
+					 rgb_frame->data[0], rgb_frame->linesize[0],
+					 myPlayer->video_codec_ctx->width, myPlayer->video_codec_ctx->height);
+		 ANativeWindow_unlockAndPost(mWindow);
+		 usleep(1000 * 10);
+	 }
+
+	 av_frame_free(&picture);
+	 av_frame_free(&rgb_frame);
+}
+
+
+
+/**
+ * 解码视频
+ */
+void *decode_video(void *param) {
+	struct Player *myPlayer = (struct Player *)param;
+	//编码数据
+	AVPacket *pkt = (AVPacket *)av_malloc(sizeof(AVPacket));
+	//一帧一帧解码
+	while(av_read_frame(myPlayer->avFormatCtx, pkt) >= 0) {
+		if(pkt->stream_index == myPlayer->stream_video_index) {
+			//解包成一帧一帧图像
+			decode_v(myPlayer, pkt);
+		}
+		av_free_packet(pkt);
+	}
+}
+
+
+
+
+
+
+void getAudioTrack(JNIEnv *env, Player *myPlayer) {
+	jmethodID method_creat_audiotrack = env->GetStaticMethodID(global_jcls, "getAudioTrack", "()Landroid/media/AudioTrack;");
+	jobject audiotrack =   env->CallStaticObjectMethod(global_jcls, method_creat_audiotrack);
+	jclass audiotrack_cls = env->GetObjectClass(audiotrack);
+
+	jmethodID play = env->GetMethodID(audiotrack_cls, "play", "()V");
+	env->CallVoidMethod(audiotrack, play);
+	jmethodID write = env->GetMethodID(audiotrack_cls, "write", "([BII)I");
+
+	myPlayer->audioTrack_write = write;
+	myPlayer->audioTrack = audiotrack;
+}
+
+/**
+ * jni初始化调用方法
+ */
+jint JNI_OnLoad(JavaVM* vm, void* reserved) {
+	javaVm = vm;
+	return JNI_VERSION_1_4;
+}
+
+
+/**
+ * 重采样
+ */
+void swr_audio(Player *myPlayer) {
+	AVCodecContext *pCodecCtx = myPlayer->audio_codec_ctx;
+	 SwrContext *swr_ctx = swr_alloc();
+	 int out_ch_layout = AV_CH_LAYOUT_STEREO;
+	 enum AVSampleFormat out_sample_fmt = AV_SAMPLE_FMT_S16;
+	 int out_sample_rate = 44100;
+	 swr_alloc_set_opts(swr_ctx,
+						  out_ch_layout, out_sample_fmt, out_sample_rate,
+						  pCodecCtx->channel_layout, pCodecCtx->sample_fmt, pCodecCtx->sample_rate,
+						  0, NULL);
+	 if(swr_init(swr_ctx) < 0){
+		 LOGE("初始化重采样参数异常: %s", strerror(errno));
+		 return;
+	 }
+
+	 myPlayer->swr_ctx = swr_ctx;
+}
+
+
+/**
+ * 解码音频
+ */
+void*decode_audio(void *param) {
+	struct Player *myPlayer = (struct Player *)param;
+
+
+	AVFormatContext *pFrameCtx = myPlayer->avFormatCtx;
+	AVCodecContext *pCodecCtx = myPlayer->audio_codec_ctx;
+	JNIEnv *env;
+	javaVm->AttachCurrentThread(&env,NULL);
+
+	getAudioTrack(env, myPlayer);
+
+	AVPacket *pkt = (AVPacket *)av_malloc(sizeof(AVPacket));
+	AVFrame *frame = av_frame_alloc();
+	uint8_t * out_buff = (uint8_t *)av_malloc(MAX_AUDIO_FRME_SIZE);
+
+	int out_ch_layout = AV_CH_LAYOUT_STEREO;
+	int out_sample_rate = 44100;
+	int out_nb_channels = av_get_channel_layout_nb_channels(out_ch_layout);
+	int got_frame_ptr = 0;
+	int ret = -1;
+	enum AVSampleFormat out_sample_fmt = AV_SAMPLE_FMT_S16;
+
+	while(av_read_frame(pFrameCtx, pkt) >= 0) {
+		if(pkt->stream_index == myPlayer->stream_audio_index) {
+			ret = avcodec_decode_audio4(pCodecCtx, frame,
+									  &got_frame_ptr, pkt);
+
+			swr_convert(myPlayer->swr_ctx, &out_buff, MAX_AUDIO_FRME_SIZE,
+											(const uint8_t **)frame->data , frame->nb_samples);
+			 int out_size = av_samples_get_buffer_size(NULL, out_nb_channels, frame->nb_samples,
+					 out_sample_fmt, 1);
+
+			//out_buffer缓冲区数据，转成byte数组
+			 jbyteArray byteArray = env->NewByteArray(out_size);
+			 //给数组赋值
+			 jbyte* elments = env->GetByteArrayElements(byteArray, NULL);
+			 memcpy(elments, out_buff, out_size);
+			 //同步数组
+			 env->ReleaseByteArrayElements(byteArray, elments, 0);
+
+
+			 env->CallVoidMethod(myPlayer->audioTrack, myPlayer->audioTrack_write, byteArray,0, out_size);
+			 //释放局部引用
+			 env->DeleteLocalRef(byteArray);
+		}
+	}
+
+	javaVm->DetachCurrentThread();
+}
+
+
+/*
+ * Class:     com_example_ffmpeg_FFmpegUtils
+ * Method:    palyAudioAndVideo
+ * Signature: (Ljava/lang/String;Landroid/view/Surface;)V
+ */
+JNIEXPORT void JNICALL Java_com_example_ffmpeg_FFmpegUtils_palyAudioAndVideo
+  (JNIEnv *env, jclass jcls, jstring input_file_jstr, jobject surface) {
+
+	struct Player *myPlayer = (struct Player *)malloc(sizeof(struct Player));
+	global_jcls = (jclass)env->NewGlobalRef(jcls);
+	const char *inpuft_file_cst = env->GetStringUTFChars(input_file_jstr, NULL);
+	myPlayer->stream_audio_index = AVMEDIA_TYPE_UNKNOWN;
+	myPlayer->stream_video_index = AVMEDIA_TYPE_UNKNOWN;
+	init_av_ctx(inpuft_file_cst, myPlayer);
+	//javaVm = env->GetJavaVM(&javaVm);
+	find_stream_index(myPlayer);
+
+	if(myPlayer->stream_audio_index == AVMEDIA_TYPE_UNKNOWN || myPlayer->stream_video_index == AVMEDIA_TYPE_UNKNOWN) {
+		LOGE("找不到音视频流信息");
+		return;
+	}
+	//打开视频解码器
+	open_video_decoder(myPlayer);
+
+	//打开音频解码器
+	open_audio_decoder(myPlayer);
+
+	swr_audio(myPlayer);
+
+	init_window(env, surface, myPlayer);
+	//pthread_create(&(myPlayer->video_thread_id), NULL,decode_video, (void *)myPlayer);
+
+	pthread_create(&myPlayer->audio_thread_id, NULL, decode_audio, (void *)myPlayer);
+	env->ReleaseStringUTFChars(input_file_jstr, inpuft_file_cst);
+}
 
 
 

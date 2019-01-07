@@ -7,7 +7,7 @@
 
     <LinearLayout 
         android:layout_width="match_parent"
-        android:layout_height="32dp"
+        android:layout_height="42dp"
         android:orientation="horizontal">
     	<Button
 	        android:layout_width="wrap_content"
@@ -20,7 +20,33 @@
 	        android:layout_height="wrap_content"
 	        android:text="播放视频" 
 	        android:onClick="play"/>
+    	
+    	<Button
+	        android:layout_width="wrap_content"
+	        android:layout_height="wrap_content"
+	        android:text="解码音频" 
+	        android:onClick="decodeAudio"/>
+    	
+    	
+    	<Button
+	        android:layout_width="wrap_content"
+	        android:layout_height="wrap_content"
+	        android:text="播放音频" 
+	        android:onClick="decodePlayAudio"/>
 	</LinearLayout>
+	
+     <LinearLayout 
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:orientation="horizontal">
+    	<Button
+	        android:layout_width="wrap_content"
+	        android:layout_height="wrap_content"
+	        android:text="子线程视频播放" 
+	        android:onClick="decodePlayAudioOnThread"/>
+	
+	</LinearLayout>
+    
 	<come.view.ViedioSurface
 	    android:id="@+id/viedio_view"
 	    android:layout_width="match_parent"

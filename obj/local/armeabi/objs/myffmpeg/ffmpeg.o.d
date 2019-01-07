@@ -109,7 +109,12 @@ obj/local/armeabi/objs/myffmpeg/ffmpeg.o: jni/ffmpeg.cpp \
  jni/libyuv/include/libyuv/scale.h jni/libyuv/include/libyuv/scale_argb.h \
  jni/libyuv/include/libyuv/scale.h jni/libyuv/include/libyuv/scale_row.h \
  jni/libyuv/include/libyuv/version.h \
- jni/libyuv/include/libyuv/video_common.h
+ jni/libyuv/include/libyuv/video_common.h \
+ jni/ffmpeg/include/libavutil/opt.h \
+ jni/ffmpeg/include/libswresample/swresample.h \
+ jni/ffmpeg/include/libswresample/version.h \
+ E:/NDK/android-ndk-r8e/platforms/android-9/arch-arm/usr/include/pthread.h \
+ E:/NDK/android-ndk-r8e/platforms/android-9/arch-arm/usr/include/sched.h
 
 jni/com_example_ffmpeg_FFmpegUtils.h:
 
@@ -350,3 +355,13 @@ jni/libyuv/include/libyuv/scale_row.h:
 jni/libyuv/include/libyuv/version.h:
 
 jni/libyuv/include/libyuv/video_common.h:
+
+jni/ffmpeg/include/libavutil/opt.h:
+
+jni/ffmpeg/include/libswresample/swresample.h:
+
+jni/ffmpeg/include/libswresample/version.h:
+
+E:/NDK/android-ndk-r8e/platforms/android-9/arch-arm/usr/include/pthread.h:
+
+E:/NDK/android-ndk-r8e/platforms/android-9/arch-arm/usr/include/sched.h:
