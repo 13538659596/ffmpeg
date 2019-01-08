@@ -52,7 +52,7 @@ include $(PREBUILT_SHARED_LIBRARY)
 #myapp
 include $(CLEAR_VARS)
 LOCAL_MODULE := myffmpeg
-LOCAL_SRC_FILES := ffmpeg.cpp syn_audio_video.cpp
+LOCAL_SRC_FILES := ffmpeg.cpp syn_audio_video.cpp Queue.cpp
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/ffmpeg/include 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/libyuv/include 
 LOCAL_LDLIBS := -llog -landroid

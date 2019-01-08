@@ -61,4 +61,14 @@ public class MainActivity extends Activity {
 				"input.mp4").getAbsolutePath();
 		FFmpegUtils.palyAudioAndVideo(input, surfaceView.getHolder().getSurface());
 	}
+	
+	
+	
+	
+	public void synAudioAndVideo(View view) {
+		String input = new File(Environment.getExternalStorageDirectory(),
+				"input.mp4").getAbsolutePath();
+		FFmpegUtils.sysnAudioAndVedio(input, surfaceView.getHolder().getSurface());
+	}
+	
 }
